@@ -1,0 +1,78 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model Household {
+  id              String   @id @default(uuid())
+  address         String
+  incomeLevel     Float
+  structuralScore Float
+  dependencyRatio Float
+  
+  // PostGIS spatial column for Geofencing & Mapping
+  // Using Unsupported to allow raw spatial queries and SPATIAL INDEX
+  location        Unsupported("geometry(Point, 4326)")?
+  
+  citizens        Citizen[]
+  distributions   DistributionLog[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Citizen {
+  id          String   @id @default(uuid())
+  nikHash     String   @unique // Hashed National ID for privacy
+  fullName    String
+  dateOfBirth DateTime
+  
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AssistanceProgram {
+  id             String   @id @default(uuid())
+  name           String
+  description    String
+  startDate      DateTime
+  endDate        DateTime
+  
+  // Variables for MCDA SAW algorithm weights
+  weightIncome   Float    @default(0.4)
+  weightStructure Float   @default(0.3)
+  weightDependency Float  @default(0.3)
+  
+  distributions  DistributionLog[]
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model DistributionLog {
+  id                  String   @id @default(uuid())
+  txHash              String   @unique // Cryptographic transaction hash
+  
+  householdId         String
+  household           Household @relation(fields: [householdId], references: [id])
+  
+  assistanceProgramId String
+  program             AssistanceProgram @relation(fields: [assistanceProgramId], references: [id])
+  
+  staffId             String // ID of the citizen/staff executing
+  verificationGps     Unsupported("geometry(Point, 4326)")?
+  
+  timestamp           DateTime @default(now())
+  status              String   @default("COMPLETED")
+  
+  @@unique([householdId, assistanceProgramId]) // Double-Dipping Mitigation
+}
